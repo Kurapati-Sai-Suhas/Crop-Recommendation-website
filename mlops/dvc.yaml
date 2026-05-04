@@ -1,0 +1,48 @@
+# ============================================================
+# mlops/dvc.yaml
+# ============================================================
+# DVC Pipeline Definition
+# 
+# DVC (Data Version Control) tracks data files and defines
+# a reproducible pipeline with dependencies.
+#
+# Run the full pipeline:
+#   dvc repro
+#
+# View pipeline DAG:
+#   dvc dag
+# ============================================================
+
+stages:
+
+  # ── Stage 1: Generate dataset ─────────────────────────────
+  generate_data:
+    cmd: python data/generate_data.py
+    deps:
+      - data/generate_data.py
+    outs:
+      - data/crop_data.csv
+
+  # ── Stage 2: Train all models ─────────────────────────────
+  train:
+    cmd: python -m backend.services.train
+    deps:
+      - data/crop_data.csv
+      - backend/services/train.py
+    outs:
+      - backend/models/RandomForest.joblib
+      - backend/models/LogisticRegression.joblib
+      - backend/models/NaiveBayes.joblib
+      - backend/models/scaler.joblib
+      - backend/models/label_encoder.joblib
+    metrics:
+      - backend/models/metrics.json:
+          cache: false
+
+  # ── Stage 3: Run tests ────────────────────────────────────
+  test:
+    cmd: pytest tests/ -v --tb=short
+    deps:
+      - tests/
+      - backend/models/RandomForest.joblib
+      - backend/services/predictor.py

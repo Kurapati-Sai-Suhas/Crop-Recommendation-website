@@ -1,0 +1,206 @@
+/* ============================================================
+   src/index.css — Global Styles + Tailwind Directives
+   ============================================================ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Google Font Import (fallback) ─────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ── CSS Custom Properties (Design Tokens) ─────────────────── */
+:root {
+  --color-bg:         #040d08;
+  --color-bg-card:    #0d1f13;
+  --color-bg-input:   #0a1a0f;
+  --color-border:     #1a3826;
+  --color-border-glow:#22c55e40;
+  --color-primary:    #22c55e;
+  --color-primary-dim:#16a34a;
+  --color-accent:     #86efac;
+  --color-text:       #e2e8f0;
+  --color-text-muted: #94a3b8;
+  --color-error:      #ef4444;
+  --color-warning:    #f59e0b;
+  --color-info:       #3b82f6;
+  --radius-card:      16px;
+  --shadow-glow:      0 0 40px #22c55e20;
+  --transition-base:  0.2s ease;
+}
+
+/* ── Base Styles ───────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 6px; }
+::-webkit-scrollbar-track  { background: #0d1f13; }
+::-webkit-scrollbar-thumb  { background: #16a34a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #22c55e; }
+
+/* ── Custom Component Classes ──────────────────────────────── */
+@layer components {
+
+  /* ── Glass Card ─────────────────────────────────────────── */
+  .card {
+    @apply rounded-2xl border bg-opacity-80 backdrop-blur-sm;
+    background: var(--color-bg-card);
+    border-color: var(--color-border);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+  }
+
+  .card-glow {
+    @apply card;
+    box-shadow: var(--shadow-glow), 0 4px 24px rgba(0, 0, 0, 0.4);
+    border-color: var(--color-border-glow);
+  }
+
+  /* ── Input Fields ───────────────────────────────────────── */
+  .input-field {
+    @apply w-full rounded-xl px-4 py-3 text-sm font-medium outline-none transition-all duration-200;
+    background: var(--color-bg-input);
+    border: 1.5px solid var(--color-border);
+    color: var(--color-text);
+  }
+
+  .input-field:focus {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px var(--color-border-glow);
+  }
+
+  .input-field::placeholder {
+    color: var(--color-text-muted);
+  }
+
+  /* ── Buttons ─────────────────────────────────────────────── */
+  .btn-primary {
+    @apply flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 font-semibold text-sm
+           transition-all duration-200 cursor-pointer select-none;
+    background: linear-gradient(135deg, #16a34a, #22c55e);
+    color: #fff;
+    box-shadow: 0 4px 20px #22c55e40;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 30px #22c55e60;
+  }
+
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-secondary {
+    @apply flex items-center justify-center gap-2 rounded-xl px-5 py-3 font-medium text-sm
+           transition-all duration-200 cursor-pointer;
+    background: transparent;
+    border: 1.5px solid var(--color-border);
+    color: var(--color-text-muted);
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+  }
+
+  /* ── Badge ───────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold;
+  }
+
+  .badge-green  { background: #16a34a22; color: #4ade80; border: 1px solid #16a34a44; }
+  .badge-blue   { background: #3b82f622; color: #93c5fd; border: 1px solid #3b82f644; }
+  .badge-yellow { background: #f59e0b22; color: #fbbf24; border: 1px solid #f59e0b44; }
+  .badge-red    { background: #ef444422; color: #fca5a5; border: 1px solid #ef444444; }
+
+  /* ── Section Headers ─────────────────────────────────────── */
+  .section-title {
+    @apply text-lg font-semibold mb-4;
+    color: var(--color-accent);
+  }
+
+  /* ── Gradient Text ───────────────────────────────────────── */
+  .gradient-text {
+    background: linear-gradient(135deg, #22c55e, #86efac, #4ade80);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* ── Metric Value ────────────────────────────────────────── */
+  .metric-value {
+    @apply text-2xl font-bold;
+    color: var(--color-primary);
+  }
+
+  .metric-label {
+    @apply text-xs uppercase tracking-widest;
+    color: var(--color-text-muted);
+  }
+
+  /* ── Error Message ───────────────────────────────────────── */
+  .error-text {
+    @apply text-xs mt-1;
+    color: var(--color-error);
+  }
+}
+
+/* ── Utility Animations ────────────────────────────────────── */
+@layer utilities {
+  .animate-fade-in  { animation: fadeIn 0.5s ease-out forwards; }
+  .animate-slide-up { animation: slideUp 0.4s ease-out forwards; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Shimmer loading effect */
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      var(--color-bg-card) 25%,
+      #1a3020 50%,
+      var(--color-bg-card) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+}
+
+/* ── Chart.js canvas sizing ───────────────────────────────── */
+canvas {
+  max-height: 300px !important;
+}

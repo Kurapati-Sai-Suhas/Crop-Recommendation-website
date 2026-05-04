@@ -1,0 +1,75 @@
+# ============================================================
+# docker-compose.yml
+# ============================================================
+# Orchestrates all services:
+#   - backend  : FastAPI on port 8000
+#   - frontend : React/Nginx on port 3000
+#   - mlflow   : MLflow tracking server on port 5000
+#
+# Usage:
+#   docker-compose up --build      # first run
+#   docker-compose up              # subsequent runs
+#   docker-compose down            # stop all
+# ============================================================
+
+version: "3.9"
+
+services:
+
+  # ── FastAPI Backend ─────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: crop-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount models directory so they persist between rebuilds
+      - ./backend/models:/app/backend/models
+      - ./logs:/app/logs
+      - ./mlops/mlruns:/app/mlops/mlruns
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ── React Frontend ──────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: crop-frontend
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── MLflow Tracking Server ──────────────────────────────────
+  mlflow:
+    image: python:3.12-slim
+    container_name: crop-mlflow
+    command: >
+      bash -c "pip install mlflow &&
+               mlflow server
+               --backend-store-uri /mlruns
+               --host 0.0.0.0
+               --port 5000"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./mlops/mlruns:/mlruns
+    restart: unless-stopped
+
+volumes:
+  models:
+  logs:
+  mlruns:

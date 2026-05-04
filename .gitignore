@@ -1,0 +1,12 @@
+# Virtual Environments
+.venv/
+.venv-py312/
+__pycache__/
+
+# Node Modules
+node_modules/
+frontend/node_modules/
+
+# ML/Logs
+mlops/mlruns/
+logs/

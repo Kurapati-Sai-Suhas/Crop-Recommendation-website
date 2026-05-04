@@ -1,0 +1,105 @@
+# ============================================================
+# .github/workflows/ci_cd.yml
+# ============================================================
+# GitHub Actions CI/CD Pipeline
+#
+# Triggers on push to main or pull requests.
+# Pipeline stages:
+#   1. Setup Python environment
+#   2. Install dependencies
+#   3. Generate dataset + train models
+#   4. Run test suite
+#   5. Build Docker image
+#   6. Deploy to Render (backend) — requires RENDER_API_KEY secret
+# ============================================================
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Job 1: Test ─────────────────────────────────────────────
+  test:
+    name: Train & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate dataset
+        run: python data/generate_data.py
+
+      - name: Train models
+        run: python train_pipeline.py
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+      - name: Upload model artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: trained-models
+          path: backend/models/
+          retention-days: 7
+
+  # ── Job 2: Build Docker ──────────────────────────────────────
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/crop-recommendation-backend:latest
+
+  # ── Job 3: Deploy to Render ──────────────────────────────────
+  deploy:
+    name: Deploy Backend (Render)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Trigger Render Deploy
+        run: |
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" \
+            -H "Accept: application/json"
+        # Set RENDER_DEPLOY_HOOK_URL in GitHub Secrets
+        # Get it from: Render Dashboard → Service → Settings → Deploy Hook
