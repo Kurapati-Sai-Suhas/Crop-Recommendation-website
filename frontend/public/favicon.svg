@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="CropAI">
+  <rect width="32" height="32" rx="7" fill="#0d1f13"/>
+  <path d="M16 26V13" stroke="#22c55e" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M16 16c-4.4 0-7-2.6-7-7 4.4 0 7 2.6 7 7z" fill="#16a34a"/>
+  <path d="M16 13c0-4.4 2.6-7 7-7 0 4.4-2.6 7-7 7z" fill="#4ade80"/>
+</svg>

@@ -1,0 +1,31 @@
+# Version control
+.git
+.gitignore
+.github
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-py312/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Local run artifacts
+logs/
+mlops/mlruns/
+.dvc/cache/
+
+# Docs and editor cruft
+*.md
+!README.md
+.vscode/
+.idea/
+.DS_Store

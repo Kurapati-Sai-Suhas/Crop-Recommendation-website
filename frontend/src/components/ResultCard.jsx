@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { CheckCircle, TrendingUp } from 'lucide-react';
+import { CheckCircle, TrendingUp, AlertTriangle } from 'lucide-react';
 
 // Crop emoji map for visual flair
 const CROP_EMOJI = {
@@ -27,7 +27,47 @@ const getConfidenceStyle = (conf) => {
 export default function ResultCard({ result }) {
   if (!result) return null;
 
-  const { crop, confidence, model_used } = result.primary_prediction;
+  const { crop, confidence, model_used } = result.primary_prediction ?? {};
+
+  // The backend now returns 503 rather than a placeholder crop, but never
+  // render an unusable value as if it were a recommendation: a fabricated
+  // "unknown" at 0% confidence used to reach users looking entirely normal.
+  const isUsable =
+    typeof crop === 'string' &&
+    crop.length > 0 &&
+    crop !== 'unknown' &&
+    Number.isFinite(confidence) &&
+    confidence > 0;
+
+  if (!isUsable) {
+    return (
+      <div
+        className="card p-6 animate-slide-up"
+        id="result-card-unavailable"
+        role="alert"
+        style={{ borderColor: '#f59e0b44' }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <AlertTriangle size={16} style={{ color: '#f59e0b' }} />
+          <span
+            className="text-xs font-semibold uppercase tracking-widest"
+            style={{ color: '#f59e0b' }}
+          >
+            No recommendation available
+          </span>
+        </div>
+        <p className="text-sm" style={{ color: '#cbd5e1' }}>
+          The prediction service returned an incomplete result, so no crop can be
+          recommended for these conditions.
+        </p>
+        <p className="text-xs mt-2" style={{ color: '#4a7c5e' }}>
+          If you are running this locally, train the models first:{' '}
+          <code style={{ color: '#86efac' }}>python train_pipeline.py</code>
+        </p>
+      </div>
+    );
+  }
+
   const emoji  = CROP_EMOJI[crop] || '🌱';
   const pct    = Math.round(confidence * 100);
   const cs     = getConfidenceStyle(confidence);

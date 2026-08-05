@@ -21,6 +21,38 @@ import ExplanationPanel from '../components/ExplanationPanel';
 import { PageLoader }  from '../components/LoadingSpinner';
 import { predictCrop, explainPrediction } from '../api/client';
 
+/**
+ * Turn an axios error into something a user can act on.
+ * Validation detail from FastAPI is an array of objects, not a string —
+ * interpolating it directly used to render "[object Object]".
+ */
+function describeApiError(err, action) {
+  const status = err.response?.status;
+
+  if (status === 503) {
+    return 'The prediction service is unavailable — its models are not loaded. ' +
+           'If you are running this locally, run: python train_pipeline.py';
+  }
+  if (status === 422) {
+    const detail = err.response?.data?.detail;
+    const first  = Array.isArray(detail) ? detail[0] : null;
+    const field  = first?.loc?.slice(-1)[0];
+    const reason = first?.msg ?? 'check the values you entered';
+    return field
+      ? `Invalid value for "${field}": ${reason}`
+      : `Invalid input: ${reason}`;
+  }
+  if (status === 429) {
+    return 'Too many requests. Please wait a moment and try again.';
+  }
+  if (!err.response) {
+    return 'Could not reach the prediction service. Check that the backend is running.';
+  }
+
+  const detail = err.response?.data?.detail;
+  return `${action} error: ${typeof detail === 'string' ? detail : err.message}`;
+}
+
 export default function Dashboard() {
   // ── State ───────────────────────────────────────────────────────────────
   const [loading,      setLoading]      = useState(false);
@@ -41,8 +73,7 @@ export default function Dashboard() {
       const predResult = await predictCrop(formData);
       setPrediction(predResult);
     } catch (err) {
-      const msg = err.response?.data?.detail || err.message || 'Prediction failed';
-      setError(`Prediction error: ${msg}`);
+      setError(describeApiError(err, 'Prediction'));
       setLoading(false);
       return;
     }

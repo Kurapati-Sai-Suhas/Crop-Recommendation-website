@@ -17,20 +17,26 @@ Why SHAP?
 ============================================================
 """
 
-import os
-import json
 import base64
 import io
+import logging
+import os
+import threading
+
 import numpy as np
 import pandas as pd
 import shap
-import matplotlib
-matplotlib.use("Agg")       # non-interactive backend (no display needed)
-import matplotlib.pyplot as plt
+# The object-oriented Figure API is used below rather than pyplot: pyplot keeps
+# a global figure registry that is not safe to touch from multiple threads, and
+# request handlers now run in the threadpool.
+from matplotlib.figure import Figure
 
+from backend.errors import ExplanationFailed, ModelsUnavailable
 from backend.services.predictor import (
     load_models, get_rf_model, get_label_encoder, get_feature_array
 )
+
+logger = logging.getLogger(__name__)
 
 FEATURES = ["N", "P", "K", "temperature", "humidity", "ph", "rainfall"]
 
@@ -47,41 +53,57 @@ FEATURE_LABELS = {
 BASE_DIR  = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_PATH = os.path.join(BASE_DIR, "data", "crop_data.csv")
 
-# Module-level SHAP explainer cache
+# Module-level SHAP explainer cache. Guarded by _lock: without it, concurrent
+# first requests each built their own TreeExplainer over the same background set.
 _explainer       = None
 _background_data = None
+_lock            = threading.RLock()
 
 
 def _load_explainer():
-    """Lazily initialise SHAP TreeExplainer with background data sample."""
+    """Initialise the SHAP TreeExplainer once, thread-safely."""
     global _explainer, _background_data
 
     if _explainer is not None:
-        return
+        return                                   # fast path, no lock
 
-    load_models()
-    rf = get_rf_model()
+    with _lock:
+        if _explainer is not None:               # re-check inside the lock
+            return
 
-    if rf is None:
-        raise RuntimeError("RandomForest model not loaded. Run training first.")
+        load_models()
+        rf = get_rf_model()
+        if rf is None:
+            raise ModelsUnavailable(
+                "RandomForest model not loaded; cannot build a SHAP explainer"
+            )
 
-    if os.path.exists(DATA_PATH):
-        df = pd.read_csv(DATA_PATH)
-        sample = df[FEATURES].sample(100, random_state=42).values
-        # Ensure background data is in the same feature space the RF was trained on
-        try:
-            from backend.services import predictor as _predictor
-            if getattr(_predictor, "_scaler", None) is not None:
-                _background_data = _predictor._scaler.transform(sample)
-            else:
-                _background_data = sample
-        except Exception:
-            _background_data = sample
-    else:
-        _background_data = np.zeros((10, len(FEATURES)))
+        from backend.services import predictor as _predictor
 
-    _explainer = shap.TreeExplainer(rf, data=_background_data, feature_perturbation="interventional")
-    print("[OK] SHAP TreeExplainer initialised")
+        if os.path.exists(DATA_PATH):
+            df     = pd.read_csv(DATA_PATH)
+            sample = df[FEATURES].sample(100, random_state=42).values
+            # The background set must live in the same feature space the model
+            # was trained in, or the attributions are silently meaningless.
+            if _predictor._scaler is None:
+                raise ModelsUnavailable(
+                    "Scaler not loaded; cannot place SHAP background data "
+                    "in the model's feature space"
+                )
+            background = _predictor._scaler.transform(sample)
+        else:
+            logger.warning(
+                "Training data not found at %s -- falling back to a zero "
+                "background set. SHAP attributions will be less meaningful.",
+                DATA_PATH,
+            )
+            background = np.zeros((10, len(FEATURES)))
+
+        _background_data = background
+        _explainer = shap.TreeExplainer(
+            rf, data=background, feature_perturbation="interventional"
+        )
+        logger.info("SHAP TreeExplainer initialised")
 
 
 def explain_prediction(data, predicted_crop):
@@ -103,17 +125,20 @@ def explain_prediction(data, predicted_crop):
     _load_explainer()
 
     raw, scaled = get_feature_array(data)
-    # Use the scaled features for SHAP (explainer was initialised with scaled background)
-    X_input = scaled if scaled is not None else raw  # shape (1, 7)
-
-    shap_vals = _explainer.shap_values(X_input)
+    # Use the scaled features: the explainer was initialised with a scaled
+    # background, and the two must match.
+    shap_vals = _explainer.shap_values(scaled)
 
     le = get_label_encoder()
-    if le is not None:
-        classes  = list(le.classes_)
-        crop_idx = classes.index(predicted_crop) if predicted_crop in classes else 0
-    else:
-        crop_idx = 0
+    if le is None:
+        raise ModelsUnavailable("Label encoder not loaded; cannot map SHAP classes")
+
+    classes = list(le.classes_)
+    if predicted_crop not in classes:
+        raise ExplanationFailed(
+            f"Predicted crop '{predicted_crop}' is not a known class"
+        )
+    crop_idx = classes.index(predicted_crop)
 
     # Extract SHAP values for predicted class
     if isinstance(shap_vals, list):
@@ -152,6 +177,9 @@ def explain_prediction(data, predicted_crop):
 
 def _build_text_explanation(feature_shap, crop):
     """Build a human-readable explanation sentence."""
+    if not feature_shap:
+        return f"No feature attributions were available for {crop.capitalize()}."
+
     top3  = feature_shap[:3]
     parts = []
     for fs in top3:
@@ -180,13 +208,20 @@ def _build_text_explanation(feature_shap, crop):
 
 
 def _generate_shap_plot(feature_shap):
-    """Generate a horizontal bar chart and return base64-encoded PNG."""
+    """
+    Generate a horizontal bar chart and return a base64-encoded PNG.
+
+    Uses the object-oriented Figure API rather than pyplot: handlers now run
+    in the threadpool, and pyplot's global figure registry would let
+    concurrent renders corrupt each other's output.
+    """
     try:
         labels = [fs["label"] for fs in feature_shap]
         values = [fs["shap_value"] for fs in feature_shap]
         colors = ["#22c55e" if v > 0 else "#ef4444" for v in values]
 
-        fig, ax = plt.subplots(figsize=(7, 4))
+        fig = Figure(figsize=(7, 4))
+        ax  = fig.subplots()
         ax.barh(labels[::-1], values[::-1], color=colors[::-1])
         ax.axvline(0, color="#555", linewidth=0.8, linestyle="--")
         ax.set_xlabel("SHAP Value (impact on prediction)", fontsize=9)
@@ -201,16 +236,16 @@ def _generate_shap_plot(feature_shap):
         for spine in ax.spines.values():
             spine.set_edgecolor("#334155")
 
-        plt.tight_layout()
+        fig.tight_layout()
         buf = io.BytesIO()
-        plt.savefig(buf, format="png", dpi=100, bbox_inches="tight",
+        fig.savefig(buf, format="png", dpi=100, bbox_inches="tight",
                     facecolor=fig.get_facecolor())
-        plt.close(fig)
         buf.seek(0)
         return base64.b64encode(buf.read()).decode("utf-8")
 
-    except Exception as e:
-        print(f"[WARN] SHAP plot generation failed: {e}")
+    except Exception:
+        # A missing chart degrades the response; it must not fail the request.
+        logger.warning("SHAP plot generation failed", exc_info=True)
         return ""
 
 
@@ -219,7 +254,7 @@ def get_global_feature_importance():
     load_models()
     rf = get_rf_model()
     if rf is None:
-        return []
+        raise ModelsUnavailable("RandomForest model not loaded")
 
     importances = rf.feature_importances_
     result = [

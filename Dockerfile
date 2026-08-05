@@ -44,8 +44,19 @@ RUN mkdir -p logs
 EXPOSE 8000
 
 # Health check
+# Uses Python, not curl: python:3.12-slim ships neither curl nor wget, so a
+# curl-based probe always failed and the container never reported healthy.
+# Probes /health/ready so an instance without usable models is taken out of
+# rotation instead of serving unusable responses.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/api/v1/health || exit 1
+    CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/v1/health/ready', timeout=5).status == 200 else 1)"]
 
-# Run the FastAPI server
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the FastAPI server.
+#
+# Multiple workers are required for real concurrency, not just cosmetic: the
+# request handlers are synchronous so Starlette runs them in a threadpool, but
+# SHAP tree traversal holds the GIL, so /explain still serialises within a
+# single process. Each worker holds its own copy of the models (~100 MB), so
+# raise CROP_WORKERS only if the container has the memory for it.
+ENV CROP_WORKERS=2
+CMD ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers ${CROP_WORKERS}"]

@@ -7,7 +7,30 @@
 [![SHAP](https://img.shields.io/badge/XAI-SHAP-yellow)](https://shap.readthedocs.io)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker)](https://docker.com)
 
-> A **production-ready** crop recommendation system that tells you **what** to plant **and why**, backed by Explainable AI (SHAP), a full MLOps pipeline, and a modern React dashboard.
+> A crop recommendation system that tells you **what** to plant **and why**, backed by Explainable AI (SHAP), an MLOps pipeline, and a modern React dashboard.
+
+---
+
+> ### ⚠️ Status: academic prototype — not for real planting decisions
+>
+> **The models are trained on synthetic data, not on field observations.**
+> `data/generate_data.py` draws each feature independently from a per-crop
+> Gaussian distribution. That is exactly the generative model Gaussian Naive
+> Bayes assumes, so the reported accuracy measures how well each classifier
+> recovers that generator — **not** agronomic accuracy.
+>
+> Concretely: every credible model scores within ~0.7 percentage points of
+> every other on this data (Naive Bayes 0.9932, Random Forest 0.9909, Logistic
+> Regression 0.9864, and a plain LDA reaches 0.9955). Model selection here is
+> noise, and none of these numbers would survive contact with real soil.
+>
+> The engineering — SHAP attribution, model serving, monitoring — is real and
+> works. The agronomy is not validated. Do not use this system to decide what
+> to plant.
+>
+> **To make the numbers meaningful:** retrain on the real
+> [Kaggle Crop Recommendation dataset](https://www.kaggle.com/datasets/atharvaingle/crop-recommendation-dataset)
+> (2,200 rows, identical schema) and re-publish whatever accuracy results.
 
 ---
 
@@ -40,6 +63,7 @@ crop-recommendation/
 │   │   ├── predictor.py       ← Inference service
 │   │   ├── explainer.py       ← SHAP XAI service
 │   │   └── monitoring.py      ← Prediction logging + drift
+│   ├── errors.py              ← Typed application exceptions
 │   └── main.py                ← FastAPI entry point
 │
 ├── frontend/
@@ -52,9 +76,7 @@ crop-recommendation/
 │   └── vite.config.js
 │
 ├── mlops/
-│   ├── mlflow/mlflow_config.py
-│   ├── pipelines/training_pipeline.py
-│   └── dvc.yaml               ← DVC pipeline stages
+│   └── dvc.yaml               ← DVC pipeline stages (see Known Limitations)
 │
 ├── data/
 │   ├── crop_data.csv          ← Auto-generated dataset
@@ -71,15 +93,27 @@ crop-recommendation/
 ├── frontend/Dockerfile.frontend
 ├── docker-compose.yml
 ├── .github/workflows/ci_cd.yml
+├── LICENSE
 └── README.md
 ```
+
+---
+
+## ⚙️ Configuration
+
+The backend reads these environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `CROP_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000` | Comma-separated allowlist of browser origins. `*` is rejected — a wildcard makes the server reflect any caller's origin. |
+| `CROP_LOG_LEVEL` | `INFO` | Python logging level. |
 
 ---
 
 ## 🚀 Quick Start (Local Development)
 
 ### Prerequisites
-- Python 3.10+
+- Python 3.12+
 - Node.js 18+
 - Git
 
@@ -101,12 +135,15 @@ python train_pipeline.py
 
 You'll see output like:
 ```
-✅ Dataset generated: 2200 rows
-✅ RandomForest   | Acc: 0.9841 | F1: 0.9840
-✅ LogisticRegression | Acc: 0.9523 | F1: 0.9519
-✅ NaiveBayes     | Acc: 0.9977 | F1: 0.9977
-✅ Verification prediction: RICE (confidence: 97.00%)
+[OK] Dataset generated: 2200 rows
+  RandomForest         | Acc: 0.9909 | F1: 0.9909
+  LogisticRegression   | Acc: 0.9864 | F1: 0.9863
+  NaiveBayes           | Acc: 0.9932 | F1: 0.9931
+[OK] Verification prediction: RICE (confidence: 98.00%)
 ```
+
+Read those figures against the disclaimer above — they describe the synthetic
+generator, not agronomic performance.
 
 ### 3. Start Backend API
 
@@ -211,12 +248,25 @@ Get SHAP explanation for the prediction.
 
 ### `GET /api/v1/metrics`
 Returns evaluation metrics for all 3 models.
+`503` if the stored metrics file is malformed or incomplete.
 
 ### `GET /api/v1/health`
-Health check — confirms models are loaded.
+Liveness — `200` whenever the process is serving.
+
+### `GET /api/v1/health/ready`
+Readiness — `200` only when models are loaded and a prediction can actually be
+served, `503` otherwise. This is what the container healthcheck probes.
 
 ### `GET /api/v1/monitoring`
 Returns recent prediction logs + basic drift report.
+
+### Error responses
+
+| Status | Meaning |
+|--------|---------|
+| `422` | Input failed validation (out of range, missing, non-numeric, or non-finite such as `NaN`/`Infinity`). |
+| `503` | Models are unavailable. **The API never invents a placeholder crop** — if it cannot predict, it says so. |
+| `500` | Unexpected failure. The body carries only a correlation ID, also returned as the `X-Request-ID` header; the detail is in the server log. |
 
 ---
 
@@ -317,6 +367,24 @@ Every prediction is appended to `logs/predictions.jsonl`. The `/monitoring` endp
 
 ---
 
+## ⚠️ Known limitations
+
+Tracked, not hidden. These are real and currently unfixed:
+
+| Area | Limitation |
+|------|------------|
+| **Data** | Training data is synthetic (see the disclaimer at the top). No validation against field observations has been done. |
+| **Evaluation** | Single train/test split. No cross-validation, hyperparameter search, confusion matrix, ROC-AUC or calibration check. |
+| **Confidence** | `predict_proba` is uncalibrated (measured ECE ≈ 0.05) and systematically under-confident. The UI's High/Medium/Low bands are not derived from measured reliability. |
+| **Out-of-distribution input** | Physically absurd inputs (pH 0, all-zero soil) still return a confident crop. There is no novelty detection or abstain path. |
+| **Feature importance** | `/feature-importance` serves impurity-based importance, which is biased. Permutation importance ranks the features differently. |
+| **DVC** | `mlops/dvc.yaml` is not runnable as written — its paths are root-relative but the file lives in `mlops/`, and the repo has no initialised `.dvc/`. |
+| **Scale** | Prediction logs are a local JSONL file with no rotation, so the service is not yet safe to run as multiple replicas. |
+| **Security** | No authentication, no rate limiting, and no security headers. `/monitoring` is publicly readable. |
+| **Dependencies** | `mlflow==2.12.2` imports the removed `pkg_resources`, so `setuptools<81` is pinned as a workaround. Upgrading mlflow to ≥3.11.1 removes both the pin and 43 known advisories. |
+
+---
+
 ## 📄 License
 
-MIT — free for academic and personal use.
+MIT — see [LICENSE](LICENSE).

@@ -7,7 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Sprout, Brain, BarChart2, ShieldCheck,
-  Cpu, FlaskConical, Zap, ArrowRight, CheckCircle
+  Cpu, FlaskConical, Zap, ArrowRight, AlertTriangle
 } from 'lucide-react';
 import { checkHealth } from '../api/client';
 
@@ -46,7 +46,7 @@ const FEATURES = [
     color: '#ec4899',
     bg: '#ec489915',
     title: '22 Crop Classes',
-    desc: 'Trained on rice, maize, banana, coffee, cotton, and 17 more crops with >95% accuracy.',
+    desc: 'Covers rice, maize, banana, coffee, cotton and 17 more crops, trained on a synthetic dataset.',
   },
   {
     icon: Zap,
@@ -76,8 +76,8 @@ const CROPS = [
 // ── Stats ─────────────────────────────────────────────────────────────────
 const STATS = [
   { value: '22',   label: 'Crop Classes' },
-  { value: '2200', label: 'Training Samples' },
-  { value: '95%+', label: 'RF Accuracy' },
+  { value: '2200', label: 'Synthetic Samples' },
+  { value: '3',    label: 'Models Compared' },
   { value: '7',    label: 'Input Features' },
 ];
 
@@ -141,6 +141,27 @@ export default function Home() {
             with full <strong style={{ color: '#86efac' }}>SHAP explanations</strong> telling you
             exactly <em>why</em> that crop was chosen.
           </p>
+
+          {/* Prototype disclaimer — the models are trained on synthetic data,
+              so no accuracy claim here describes real agronomic performance. */}
+          <div
+            className="max-w-2xl mx-auto mb-10 px-5 py-4 rounded-2xl text-left flex gap-3"
+            style={{ background: '#f59e0b12', border: '1px solid #f59e0b33' }}
+            id="prototype-notice"
+            role="note"
+          >
+            <AlertTriangle
+              size={16}
+              style={{ color: '#f59e0b', flexShrink: 0, marginTop: '2px' }}
+              aria-hidden="true"
+            />
+            <p className="text-xs leading-relaxed" style={{ color: '#fcd34d' }}>
+              <strong>Academic prototype.</strong> The models are trained on{' '}
+              <strong>synthetic data</strong>, not field observations — reported
+              accuracy measures how well each model recovers that generator, not
+              agronomic accuracy. Please don't use this to decide what to plant.
+            </p>
+          </div>
 
           {/* CTA buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">

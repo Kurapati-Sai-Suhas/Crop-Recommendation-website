@@ -16,7 +16,7 @@ with clear error messages — no manual checks needed.
 
 from pydantic import BaseModel, Field
 from pydantic import ConfigDict
-from typing import Optional, Dict, List
+from typing import Dict, List
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -27,16 +27,20 @@ class CropInput(BaseModel):
     """
     Input feature vector for crop recommendation.
     All 7 features are required with realistic agronomic bounds.
+
+    `allow_inf_nan=False` rejects NaN/Infinity, which JSON permits and which
+    previously slipped past the range checks and crashed response encoding.
     """
-    N:           float = Field(..., ge=0,   le=200,  description="Nitrogen content in soil (0–200)")
-    P:           float = Field(..., ge=0,   le=200,  description="Phosphorus content in soil (0–200)")
-    K:           float = Field(..., ge=0,   le=210,  description="Potassium content in soil (0–210)")
-    temperature: float = Field(..., ge=0,   le=50,   description="Temperature in Celsius (0–50)")
-    humidity:    float = Field(..., ge=0,   le=100,  description="Relative humidity % (0–100)")
-    ph:          float = Field(..., ge=0.0, le=14.0, description="Soil pH value (0–14)")
-    rainfall:    float = Field(..., ge=0,   le=500,  description="Annual rainfall in mm (0–500)")
+    N:           float = Field(..., ge=0,   le=200,  allow_inf_nan=False, description="Nitrogen content in soil (0–200)")
+    P:           float = Field(..., ge=0,   le=200,  allow_inf_nan=False, description="Phosphorus content in soil (0–200)")
+    K:           float = Field(..., ge=0,   le=210,  allow_inf_nan=False, description="Potassium content in soil (0–210)")
+    temperature: float = Field(..., ge=0,   le=50,   allow_inf_nan=False, description="Temperature in Celsius (0–50)")
+    humidity:    float = Field(..., ge=0,   le=100,  allow_inf_nan=False, description="Relative humidity % (0–100)")
+    ph:          float = Field(..., ge=0.0, le=14.0, allow_inf_nan=False, description="Soil pH value (0–14)")
+    rainfall:    float = Field(..., ge=0,   le=500,  allow_inf_nan=False, description="Annual rainfall in mm (0–500)")
 
     model_config = ConfigDict(
+        extra="forbid",
         json_schema_extra={
             "example": {
                 "N": 80,
@@ -57,6 +61,10 @@ class CropInput(BaseModel):
 
 class SingleModelResult(BaseModel):
     """Prediction result from one model."""
+    # `model_used` collides with Pydantic's protected `model_` namespace;
+    # opting out keeps the field name and silences the warning on import.
+    model_config = ConfigDict(protected_namespaces=())
+
     crop:       str
     confidence: float
     model_used: str

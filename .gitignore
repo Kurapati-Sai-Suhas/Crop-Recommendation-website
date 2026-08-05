@@ -1,12 +1,39 @@
 # Virtual Environments
 .venv/
 .venv-py312/
+venv/
 __pycache__/
+*.py[cod]
+*.egg-info/
 
 # Node Modules
 node_modules/
 frontend/node_modules/
 
+# Build output
+frontend/dist/
+build/
+
+# Test / lint caches
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
 # ML/Logs
 mlops/mlruns/
 logs/
+.dvc/cache/
+.dvc/tmp/
+
+# Local configuration — never commit real values
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

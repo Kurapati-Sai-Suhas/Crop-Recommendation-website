@@ -2,12 +2,14 @@
    src/index.css — Global Styles + Tailwind Directives
    ============================================================ */
 
+/* ── Google Font Import (fallback) ─────────────────────────── */
+/* Must precede every other statement — CSS drops a misplaced @import, and
+   Vite warns at build time. index.html carries the same font as a <link>. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-/* ── Google Font Import (fallback) ─────────────────────────── */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 /* ── CSS Custom Properties (Design Tokens) ─────────────────── */
 :root {
