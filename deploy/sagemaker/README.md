@@ -55,10 +55,17 @@ different one than you trained on is a real production failure mode.
 ## Prerequisites
 
 ```bash
-pip install sagemaker boto3
+pip install "sagemaker<3" boto3
 ```
 
 Deliberately not in `requirements.txt` — the serving image does not need it.
+
+**The `<3` pin is required.** SageMaker Python SDK v3 removed the
+`sagemaker.sklearn` module, so `from sagemaker.sklearn.model import
+SKLearnModel` raises `ModuleNotFoundError` on v3. `pip install sagemaker`
+gives you v3 by default. Verified against v2.257.6, which prints a
+deprecation warning on import — silence it with
+`SAGEMAKER_SUPPRESS_V2_WARNING=1` if it is noisy.
 
 You also need:
 
@@ -74,6 +81,9 @@ You also need:
 ## Deploy
 
 ```bash
+# 0. Verify credentials and create the execution role (once)
+python deploy/sagemaker/bootstrap_aws.py
+
 # 1. Check the packaging works. No AWS needed.
 python deploy/sagemaker/deploy_sagemaker.py --package-only
 
