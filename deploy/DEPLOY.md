@@ -30,15 +30,22 @@ serving time touches `data/`.
 | Option | Cost | Card needed | Realistic setup | Verdict |
 |---|---|---|---|---|
 | **Hugging Face Spaces** | Free | **No** | ~30 min | **Recommended** |
+| SageMaker *serverless* | Per inference-second, no idle cost | Yes | 3-5 h first time | Viable with credits — see [sagemaker/](sagemaker/) |
 | Google Cloud Run | Free tier covers this | Yes | 2–4 h (+ gcloud install) | Good if you already have GCP billing |
-| AWS SageMaker endpoint | ~$0.05+/hr, **no free tier for endpoints** | Yes | 1–2 days | Not worth it here |
-| GCP Vertex AI endpoint | Dedicated node, **no free tier** | Yes | 1–2 days | Not worth it here |
+| SageMaker *real-time* endpoint | Billed **every hour it exists**, idle or not | Yes | 1–2 days | Not worth it here |
+| Vertex AI endpoint | Dedicated node, billed while it exists | Yes | 1–2 days | Not worth it here |
+
+If you hold AWS credits, SageMaker **serverless** inference becomes reasonable
+on cost — it bills per inference-second with no idle charge, unlike a
+real-time endpoint. [`sagemaker/`](sagemaker/) has a written and locally
+verified deployment for it. What credits do not buy is time: a first
+SageMaker deployment means IAM roles, an execution role ARN, and a container
+framework-version mismatch to resolve. Budget half a day, not an evening.
 
 **Take Hugging Face Spaces.** It is free with no credit card, gives a public
-HTTPS URL, builds from a Dockerfile, and persists. SageMaker and Vertex
-endpoints bill by the hour for an idle node — for a portfolio project that
-means either a surprise bill or an endpoint you tear down before anyone can
-click it.
+HTTPS URL, builds from a Dockerfile, and persists — and it stays up for
+anyone who clicks the link on your CV months from now, which a credit balance
+does not.
 
 Deploying somewhere real and being able to explain precisely how it maps to a
 managed platform is a stronger position than a half-configured SageMaker

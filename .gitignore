@@ -39,3 +39,4 @@ logs/
 Thumbs.db
 .space-build/
 backend/models_previous/
+model.tar.gz
