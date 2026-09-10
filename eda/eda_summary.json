@@ -1,0 +1,63 @@
+{
+  "profile": {
+    "n_rows": 2200,
+    "n_features": 7,
+    "n_classes": 22,
+    "missing_cells": 0,
+    "duplicate_rows": 0,
+    "duplicate_feature_rows": 0,
+    "class_min": 100,
+    "class_max": 100,
+    "balanced": true,
+    "dtypes": {
+      "N": "int64",
+      "P": "int64",
+      "K": "int64",
+      "temperature": "float64",
+      "humidity": "float64",
+      "ph": "float64",
+      "rainfall": "float64",
+      "label": "object"
+    }
+  },
+  "separability_probes": {
+    "majority-class baseline": 0.0455,
+    "decision tree, depth 2": 0.1818,
+    "decision tree, depth 5": 0.4086,
+    "decision tree, depth 10": 0.9809,
+    "1-nearest neighbour": 0.9736,
+    "linear discriminant": 0.9673
+  },
+  "hardest_crops": [
+    {
+      "crop": "rice",
+      "recall": 0.76,
+      "precision": 0.95,
+      "mistaken_for": "jute"
+    },
+    {
+      "crop": "pigeonpeas",
+      "recall": 0.85,
+      "precision": 0.988,
+      "mistaken_for": "kidneybeans"
+    },
+    {
+      "crop": "lentil",
+      "recall": 0.91,
+      "precision": 0.875,
+      "mistaken_for": "blackgram"
+    },
+    {
+      "crop": "blackgram",
+      "recall": 0.92,
+      "precision": 0.836,
+      "mistaken_for": "lentil"
+    },
+    {
+      "crop": "mothbeans",
+      "recall": 0.92,
+      "precision": 1.0,
+      "mistaken_for": "blackgram"
+    }
+  ]
+}

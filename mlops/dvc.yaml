@@ -15,11 +15,11 @@
 
 stages:
 
-  # ── Stage 1: Generate dataset ─────────────────────────────
-  generate_data:
-    cmd: python data/generate_data.py
+  # ── Stage 1: Download + verify dataset ────────────────────
+  download_data:
+    cmd: python data/download_data.py
     deps:
-      - data/generate_data.py
+      - data/download_data.py
     outs:
       - data/crop_data.csv
 
@@ -38,6 +38,9 @@ stages:
     metrics:
       - backend/models/metrics.json:
           cache: false
+    outs_persist:
+      - backend/models/evaluation_report.json
+      - backend/models/monitoring_baseline.json
 
   # ── Stage 3: Run tests ────────────────────────────────────
   test:

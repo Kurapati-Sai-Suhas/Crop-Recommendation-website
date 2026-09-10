@@ -29,6 +29,11 @@ FEATURES = ["N", "P", "K", "temperature", "humidity", "ph", "rainfall"]
 BASE_DIR  = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODEL_DIR = os.path.join(BASE_DIR, "backend", "models")
 
+# joblib.load below deserializes pickles, which can execute arbitrary code.
+# These artifacts are first-party: written by backend/services/train.py into a
+# directory the application controls, and rebuilt by the CI job rather than
+# fetched at runtime. Never repoint MODEL_DIR at an uploaded or user-supplied
+# path without switching to a schema-validated format such as ONNX or skops.
 MODEL_FILES = {
     "RandomForest":       "RandomForest.joblib",
     "LogisticRegression": "LogisticRegression.joblib",
@@ -166,8 +171,13 @@ def predict(data, model_name=PRIMARY_MODEL):
 
     confidence = 0.0
     if hasattr(model, "predict_proba"):
-        proba      = model.predict_proba(X)[0]
-        confidence = round(float(proba[pred_idx]), 4)
+        proba = model.predict_proba(X)[0]
+        # Index by position in model.classes_, not by the encoded label value.
+        # They coincide only while every class survives into the training
+        # split; drop one crop and proba[pred_idx] silently reads a
+        # neighbouring class's probability.
+        position   = int(np.searchsorted(model.classes_, pred_idx))
+        confidence = round(float(proba[position]), 4)
 
     return {
         "crop":       str(_encoder.inverse_transform([pred_idx])[0]),

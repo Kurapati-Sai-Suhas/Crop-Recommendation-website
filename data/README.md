@@ -1,36 +1,23 @@
 # Data Directory
 
-## ⚠️ This dataset is synthetic
+## Provenance
 
-`crop_data.csv` is **generated**, not observed. `generate_data.py` draws each
-feature independently from a hardcoded per-crop Gaussian (`CROP_PROFILES`),
-using distribution parameters loosely modelled on the Kaggle dataset linked
-below.
+`crop_data.csv` is the public **Crop Recommendation Dataset** (Atharva Ingle,
+Kaggle). Kaggle requires authentication, so `download_data.py` fetches a
+byte-identical public mirror and verifies it before writing anything to disk:
 
-Two consequences worth understanding before trusting any metric computed here:
+- **MD5** must equal `fa83739710074b21a20b156034538279`
+- **Structure** must be 2,200 rows × 8 columns across 22 crops
 
-1. **Features are independent by construction.** Real soil chemistry is
-   correlated — nitrogen, pH and rainfall move together. Here they do not.
-2. **Gaussian Naive Bayes is the Bayes-optimal classifier for this data**,
-   because the generator *is* a Gaussian Naive Bayes model. Its ~99% accuracy
-   measures the generator, not agronomy. Every other capable model lands
-   within ~0.7 percentage points for the same reason.
+Both checks run every time. A changed mirror stops the download rather than
+silently retraining the models on different data.
 
-The generator is useful as a reproducible fixture for tests and demos. It is
-not a substitute for the real dataset. To get meaningful numbers, download the
-[Kaggle Crop Recommendation Dataset](https://www.kaggle.com/datasets/atharvaingle/crop-recommendation-dataset)
-(2,200 rows, identical schema) and retrain.
+```bash
+python data/download_data.py            # fetch + verify
+python data/download_data.py --force    # re-download
+```
 
----
-
-## Dataset: Crop Recommendation Dataset (synthetic)
-
-### Overview
-- **Rows**: 2200 (100 samples per crop)
-- **Features**: 7 input features + 1 label
-- **Crops**: 22 types
-
-### Features
+## Schema
 
 | Feature | Unit | Description |
 |---------|------|-------------|
@@ -39,21 +26,43 @@ not a substitute for the real dataset. To get meaningful numbers, download the
 | K | ratio | Potassium content in soil |
 | temperature | °C | Average temperature |
 | humidity | % | Relative humidity |
-| ph | 0–14 | pH value of soil |
+| ph | 0–14 | Soil pH |
 | rainfall | mm | Annual rainfall |
-| label | — | Crop name (target variable) |
+| label | — | Crop name (target) |
 
-### Crops (22 classes)
+2,200 rows, 22 crops, **exactly 100 samples per crop**. No missing values and
+no duplicate rows — verified in [`../eda/EDA_REPORT.md`](../eda/EDA_REPORT.md),
+which recomputes all of this from the file itself.
+
+## Crops (22 classes)
+
 rice, maize, chickpea, kidneybeans, pigeonpeas, mothbeans, mungbean,
 blackgram, lentil, pomegranate, banana, mango, grapes, watermelon,
 muskmelon, apple, orange, papaya, coconut, cotton, jute, coffee
 
-### Generating the Dataset
-```bash
-python data/generate_data.py
-```
+## ⚠️ Read the accuracy figures carefully
 
-### Source
-Distribution parameters were hand-written in `generate_data.py`, loosely based
-on: [Kaggle Crop Recommendation Dataset](https://www.kaggle.com/datasets/atharvaingle/crop-recommendation-dataset).
-**No rows from that dataset are present here.**
+This is a teaching benchmark, and it behaves like one.
+
+**The task is nearly solved before you start.** An untuned linear discriminant
+reaches 0.967 in 5-fold CV and 1-NN reaches 0.974, against 0.9955 for a
+grid-searched Random Forest. The spread between the leading models is smaller
+than the fold-to-fold standard deviation, so this data cannot support a claim
+that one model is better than another.
+
+**It is probably not measured data.** Each crop's feature values are cleanly
+bounded with no tails: across all seven features there is not a single
+within-class IQR outlier, where roughly 15 would be expected from normally
+distributed measurements. Within-class feature correlations also sit at the
+level you would expect from sampling noise alone.
+
+That is fine for demonstrating a modelling workflow, which is what this
+repository is for. It is not a basis for agronomic advice.
+
+## Previous versions
+
+Before this, the file was produced by a `generate_data.py` script that drew
+each feature from a hand-written per-crop Gaussian. That generator drew every
+feature independently — precisely the generative model `GaussianNB` assumes —
+so any accuracy measured on it scored the generator rather than agronomy. It
+was replaced by the verified download above.

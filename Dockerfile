@@ -32,9 +32,9 @@ COPY data/      ./data/
 COPY mlops/     ./mlops/
 COPY train_pipeline.py .
 
-# Generate dataset and train models at build time
+# Download the dataset and train models at build time
 # (In production, mount pre-trained models as a volume instead)
-RUN python data/generate_data.py && \
+RUN python data/download_data.py && \
     python train_pipeline.py
 
 # Create logs directory

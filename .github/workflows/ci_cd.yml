@@ -7,7 +7,7 @@
 # Pipeline stages:
 #   1. Setup Python environment
 #   2. Install dependencies
-#   3. Generate dataset + train models
+#   3. Download dataset + train models
 #   4. Run test suite
 #   5. Build Docker image
 #   6. Deploy to Render (backend) — requires RENDER_API_KEY secret
@@ -46,8 +46,8 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Generate dataset
-        run: python data/generate_data.py
+      - name: Download dataset
+        run: python data/download_data.py
 
       - name: Train models
         run: python train_pipeline.py

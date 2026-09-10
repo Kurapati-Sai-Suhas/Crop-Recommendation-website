@@ -19,12 +19,12 @@ Why SHAP?
 
 import base64
 import io
+import json
 import logging
 import os
 import threading
 
 import numpy as np
-import pandas as pd
 import shap
 # The object-oriented Figure API is used below rather than pyplot: pyplot keeps
 # a global figure registry that is not safe to touch from multiple threads, and
@@ -50,8 +50,37 @@ FEATURE_LABELS = {
     "rainfall":    "Rainfall (mm)",
 }
 
+UNITS = {
+    "temperature": " C", "humidity": "%", "rainfall": " mm",
+    "N": "", "P": "", "K": "", "ph": "",
+}
+
 BASE_DIR  = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DATA_PATH = os.path.join(BASE_DIR, "data", "crop_data.csv")
+BASELINE_PATH = os.path.join(BASE_DIR, "backend", "models",
+                             "monitoring_baseline.json")
+
+_baseline_cache = None
+
+
+def _feature_baseline():
+    """
+    Per-feature training statistics, used to phrase an input as high, low or
+    typical *for that feature*. Written by the training pipeline; returns
+    None if absent, in which case the wording degrades rather than lies.
+    """
+    global _baseline_cache
+    if _baseline_cache is not None:
+        return _baseline_cache or None
+
+    try:
+        with open(BASELINE_PATH, "r", encoding="utf-8") as handle:
+            _baseline_cache = json.load(handle)["features"]
+    except (OSError, json.JSONDecodeError, KeyError):
+        logger.warning("Training baseline unavailable at %s; explanation text "
+                       "will omit high/low framing", BASELINE_PATH)
+        _baseline_cache = {}
+    return _baseline_cache or None
 
 # Module-level SHAP explainer cache. Guarded by _lock: without it, concurrent
 # first requests each built their own TreeExplainer over the same background set.
@@ -78,32 +107,28 @@ def _load_explainer():
                 "RandomForest model not loaded; cannot build a SHAP explainer"
             )
 
-        from backend.services import predictor as _predictor
-
-        if os.path.exists(DATA_PATH):
-            df     = pd.read_csv(DATA_PATH)
-            sample = df[FEATURES].sample(100, random_state=42).values
-            # The background set must live in the same feature space the model
-            # was trained in, or the attributions are silently meaningless.
-            if _predictor._scaler is None:
-                raise ModelsUnavailable(
-                    "Scaler not loaded; cannot place SHAP background data "
-                    "in the model's feature space"
-                )
-            background = _predictor._scaler.transform(sample)
-        else:
-            logger.warning(
-                "Training data not found at %s -- falling back to a zero "
-                "background set. SHAP attributions will be less meaningful.",
-                DATA_PATH,
-            )
-            background = np.zeros((10, len(FEATURES)))
-
-        _background_data = background
+        # feature_perturbation="tree_path_dependent", not "interventional".
+        #
+        # The interventional estimator needs a background sample and, on this
+        # model, made /explain fail on every request: SHAP validates
+        # additivity across all 22 classes at once, and summing float
+        # contributions over 200 trees of depth ~23 leaves ~1e-4 of residual
+        # on the near-zero-probability classes. That tripped the check and
+        # raised, even though the attributions for the *predicted* class were
+        # accurate to ~1e-9.
+        #
+        # tree_path_dependent satisfies additivity to machine precision
+        # (~1e-16), needs no background set, and is substantially faster
+        # because it does not scale with background size. The trade-off is
+        # that it conditions on the tree structure, so credit can be shared
+        # between correlated features -- relevant here only for P and K
+        # (r = 0.74). That is an acceptable cost for an explanation endpoint
+        # that returns correct values instead of raising.
+        _background_data = None
         _explainer = shap.TreeExplainer(
-            rf, data=background, feature_perturbation="interventional"
+            rf, feature_perturbation="tree_path_dependent"
         )
-        logger.info("SHAP TreeExplainer initialised")
+        logger.info("SHAP TreeExplainer initialised (tree_path_dependent)")
 
 
 def explain_prediction(data, predicted_crop):
@@ -125,8 +150,9 @@ def explain_prediction(data, predicted_crop):
     _load_explainer()
 
     raw, scaled = get_feature_array(data)
-    # Use the scaled features: the explainer was initialised with a scaled
-    # background, and the two must match.
+    # Explain the scaled vector: the forest was fitted on scaled features, so
+    # this must be the exact input the model would receive. Passing `raw` here
+    # would attribute a prediction the model never made.
     shap_vals = _explainer.shap_values(scaled)
 
     le = get_label_encoder()
@@ -180,18 +206,26 @@ def _build_text_explanation(feature_shap, crop):
     if not feature_shap:
         return f"No feature attributions were available for {crop.capitalize()}."
 
+    baseline = _feature_baseline()
     top3  = feature_shap[:3]
     parts = []
     for fs in top3:
-        direction = "High" if fs["input_value"] > 50 else "Low"
         val  = fs["input_value"]
-        unit = ""
-        if fs["feature"] == "temperature":
-            unit = "C"
-        elif fs["feature"] == "humidity":
-            unit = "%"
-        elif fs["feature"] == "rainfall":
-            unit = " mm"
+        unit = UNITS.get(fs["feature"], "")
+
+        # Describe the value against that feature's own training
+        # distribution. A fixed ">50 is High" rule compared pH (range 3.5-9.9)
+        # and temperature (8.8-43.7) against the same threshold, so it
+        # labelled every realistic pH "Low" and most temperatures "Low" too.
+        stats = baseline.get(fs["feature"]) if baseline else None
+        if stats and stats["std"] > 0:
+            z = (val - stats["mean"]) / stats["std"]
+            if   z >=  1.0: direction = "High"
+            elif z <= -1.0: direction = "Low"
+            else:           direction = "Typical"
+        else:
+            direction = "Recorded"
+
         parts.append(f"{direction} {fs['label']} ({val}{unit})")
 
     if len(parts) >= 2:

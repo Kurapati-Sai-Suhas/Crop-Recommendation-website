@@ -1,20 +1,34 @@
 {
   "RandomForest": {
-    "accuracy": 0.9909,
-    "precision": 0.9911,
-    "recall": 0.9909,
-    "f1_score": 0.9909
+    "accuracy": 0.9955,
+    "precision": 0.9957,
+    "recall": 0.9955,
+    "f1_score": 0.9955,
+    "cv_mean": 0.9938,
+    "best_params": {
+      "model__max_depth": "None",
+      "model__min_samples_leaf": "1",
+      "model__n_estimators": "200"
+    }
   },
   "LogisticRegression": {
-    "accuracy": 0.9864,
-    "precision": 0.987,
-    "recall": 0.9864,
-    "f1_score": 0.9863
+    "accuracy": 0.9841,
+    "precision": 0.9852,
+    "recall": 0.9841,
+    "f1_score": 0.984,
+    "cv_mean": 0.9778,
+    "best_params": {
+      "model__C": "100.0"
+    }
   },
   "NaiveBayes": {
-    "accuracy": 0.9932,
-    "precision": 0.9941,
-    "recall": 0.9932,
-    "f1_score": 0.9931
+    "accuracy": 0.9955,
+    "precision": 0.9959,
+    "recall": 0.9955,
+    "f1_score": 0.9954,
+    "cv_mean": 0.9949,
+    "best_params": {
+      "model__var_smoothing": "1e-11"
+    }
   }
 }

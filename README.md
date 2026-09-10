@@ -11,26 +11,29 @@
 
 ---
 
-> ### ⚠️ Status: academic prototype — not for real planting decisions
+> ### ⚠️ Status: portfolio project — not for real planting decisions
 >
-> **The models are trained on synthetic data, not on field observations.**
-> `data/generate_data.py` draws each feature independently from a per-crop
-> Gaussian distribution. That is exactly the generative model Gaussian Naive
-> Bayes assumes, so the reported accuracy measures how well each classifier
-> recovers that generator — **not** agronomic accuracy.
+> The models are trained on the public **Crop Recommendation Dataset**
+> (2,200 rows, 22 crops), fetched and checksum-verified by
+> `data/download_data.py`. Read the accuracy figures with two caveats:
 >
-> Concretely: every credible model scores within ~0.7 percentage points of
-> every other on this data (Naive Bayes 0.9932, Random Forest 0.9909, Logistic
-> Regression 0.9864, and a plain LDA reaches 0.9955). Model selection here is
-> noise, and none of these numbers would survive contact with real soil.
+> **1. The task is close to solved by construction.** An untuned linear
+> discriminant scores **0.967** and 1-NN scores **0.974** in 5-fold CV; the
+> grid-searched Random Forest reaches **0.9955** on the held-out test set.
+> The gap between the top models (+0.0011 CV) is smaller than the
+> fold-to-fold standard deviation (0.0058), so "which model is best" is not
+> a question this dataset can answer. A ~99% headline here is a property of
+> the data, not evidence of modelling skill.
 >
-> The engineering — SHAP attribution, model serving, monitoring — is real and
-> works. The agronomy is not validated. Do not use this system to decide what
-> to plant.
+> **2. The dataset is a benchmark, not field measurements.** Each crop's
+> feature values are tightly bounded with no tails — zero within-class IQR
+> outliers across all seven features, where ~15 would be expected from
+> measured data — which indicates it was at least partly generated. See
+> [`eda/EDA_REPORT.md`](eda/EDA_REPORT.md).
 >
-> **To make the numbers meaningful:** retrain on the real
-> [Kaggle Crop Recommendation dataset](https://www.kaggle.com/datasets/atharvaingle/crop-recommendation-dataset)
-> (2,200 rows, identical schema) and re-publish whatever accuracy results.
+> The engineering is real and works: leakage-safe pipelines, cross-validated
+> selection, SHAP attribution, model serving, drift monitoring. The agronomy
+> is not validated. **Do not use this system to decide what to plant.**
 
 ---
 
@@ -79,8 +82,13 @@ crop-recommendation/
 │   └── dvc.yaml               ← DVC pipeline stages (see Known Limitations)
 │
 ├── data/
-│   ├── crop_data.csv          ← Auto-generated dataset
-│   └── generate_data.py       ← Synthetic data generator
+│   ├── crop_data.csv          ← Dataset (downloaded, checksum-verified)
+│   └── download_data.py       ← Fetch + verify the real dataset
+│
+├── eda/
+│   ├── run_eda.py             ← Exploratory analysis (regenerates everything)
+│   ├── EDA_REPORT.md          ← Findings, all figures computed at run time
+│   └── figures/               ← Generated plots
 │
 ├── tests/
 │   ├── test_api.py            ← FastAPI endpoint tests
@@ -129,21 +137,47 @@ pip install -r requirements.txt
 ### 2. Train Models (one-time setup)
 
 ```bash
-# Generates dataset + trains RF, LR, NB + saves models + logs to MLflow
+# Downloads + verifies the dataset, then trains, tunes and evaluates
 python train_pipeline.py
 ```
 
-You'll see output like:
+Actual output:
 ```
-[OK] Dataset generated: 2200 rows
-  RandomForest         | Acc: 0.9909 | F1: 0.9909
-  LogisticRegression   | Acc: 0.9864 | F1: 0.9863
-  NaiveBayes           | Acc: 0.9932 | F1: 0.9931
-[OK] Verification prediction: RICE (confidence: 98.00%)
+[DATA] 2200 rows x 8 cols | 22 crops
+       missing cells: 0 | duplicate rows: 0
+       class balance: min 100, max 100 per crop -- balanced
+[SPLIT] train 1760 | test 440 (stratified)
+
+  STAGE 1 - baseline comparison (5-fold CV, train only)
+  RandomForest         0.9926 +/- 0.0058
+  LogisticRegression   0.9682 +/- 0.0066
+  NaiveBayes           0.9949 +/- 0.0042
+
+  STAGE 2 - hyperparameter tuning (GridSearchCV, train only)
+  RandomForest: 18 configs x 5 folds = 90 fits
+    -> best CV 0.9938 | {'max_depth': None, 'min_samples_leaf': 1, 'n_estimators': 200}
+
+  STAGE 3 - held-out test set (touched once)
+  RandomForest         acc 0.9955 | F1 0.9955 (CV was 0.9938)
+  LogisticRegression   acc 0.9841 | F1 0.9840 (CV was 0.9778)
+  NaiveBayes           acc 0.9955 | F1 0.9954 (CV was 0.9949)
+
+  MODEL SELECTION
+  highest CV     : NaiveBayes (0.9949)
+  served model   : RandomForest (0.9938)
+  gap            : +0.0011 vs fold std 0.0058
+  -> within fold noise: statistically indistinguishable.
+     Keeping RandomForest for exact TreeSHAP attribution.
+
+[ERRORS] 2 misclassified of 440 test rows
+         blackgram    -> maize        x1
+         rice         -> jute         x1
+[PERMUTATION IMPORTANCE] humidity 0.320, N 0.229, rainfall 0.179, K 0.167
 ```
 
-Read those figures against the disclaimer above — they describe the synthetic
-generator, not agronomic performance.
+Read those figures against the disclaimer above. The interesting line is not
+the accuracy — it is the model-selection block admitting the top two models
+cannot be told apart on this data.
 
 ### 3. Start Backend API
 
@@ -314,7 +348,7 @@ tests/test_model.py::TestModelAccuracy::test_rf_accuracy_above_90_percent PASSED
 ## 🔬 MLOps Architecture
 
 ```
-Data Generation → DVC tracking → Model Training → MLflow logging
+Download + verify → DVC tracking → CV + tuning → Test eval → MLflow
                                       ↓
                               Model Registry
                                       ↓
@@ -331,8 +365,110 @@ Data Generation → DVC tracking → Model Training → MLflow logging
 
 ### DVC Manages:
 - `data/crop_data.csv` versioning
-- Pipeline stages: `generate_data → train → test`
+- Pipeline stages: `download_data → train → test`
 - Reproducible runs with `dvc repro`
+
+---
+
+## 🔬 Modelling protocol
+
+The training pipeline (`backend/services/train.py`) runs four stages. The
+ordering is the point: every decision is made before the test set is opened.
+
+| Stage | What happens | Data used |
+|---|---|---|
+| 1. Baseline comparison | 5-fold stratified CV over three models with different inductive biases | training split only |
+| 2. Tuning | `GridSearchCV` on the same folds | training split only |
+| 3. Selection | Best cross-validated accuracy, with an explicit tie-break | training split only |
+| 4. Final evaluation | Scored **once** | held-out test split |
+
+**Leakage control.** Scaling happens inside a scikit-learn `Pipeline`, so the
+`StandardScaler` is refit within every CV fold. Fitting one scaler on the
+whole training set before cross-validating would leak each fold's validation
+statistics into its own training data.
+
+**Why these three models.** Not three variations on one idea — three
+different assumptions. `GaussianNB` is generative and assumes per-class
+independent Gaussians; `LogisticRegression` draws linear boundaries;
+`RandomForest` is non-linear and models interactions. Comparing them answers
+a real question: does this problem need a non-linear boundary?
+
+### Results
+
+| Model | CV (untuned) | CV (tuned) | Test accuracy | Test F1 |
+|---|---|---|---|---|
+| RandomForest | 0.9926 ± 0.0058 | 0.9938 | **0.9955** | 0.9955 |
+| LogisticRegression | 0.9682 ± 0.0066 | 0.9778 | **0.9841** | 0.9840 |
+| NaiveBayes | 0.9949 ± 0.0042 | 0.9949 | **0.9955** | 0.9954 |
+
+### Which model is served, and why
+
+`NaiveBayes` scored highest in cross-validation
+(0.9949), but its lead over `RandomForest`
+is **+0.0011** against a fold standard deviation of
+**0.0058**. That gap is noise, not a result.
+
+`RandomForest` is served — not because it scored higher, but because
+the product requires per-prediction SHAP values, and `TreeExplainer` computes
+those exactly for a forest. `GaussianNB` would need `KernelExplainer`:
+approximate, and orders of magnitude slower. **The tie-break is documented
+because "accuracy chose it" would be a false statement about a 0.1pp gap.**
+
+### Error analysis
+
+2 of 440 test rows are misclassified:
+
+- `blackgram` → `maize` ×1
+- `rice` → `jute` ×1
+
+The rice ↔ jute confusion is the one that persists across models and shows up
+in EDA too (rice recall drops to 0.76 under a linear discriminant). Both are
+wet-season crops of the same river-delta conditions and their
+humidity/rainfall envelopes genuinely overlap. **This is a property of the
+world, not a modelling defect** — separating them needs a feature the dataset
+does not contain: soil texture, season, or geography.
+
+### What the model relies on
+
+Permutation importance on the test set, preferred over the forest's built-in
+`feature_importances_`, which is impurity-based and biased toward
+high-cardinality continuous features:
+
+- **humidity** — 0.320 ± 0.018
+- **N** — 0.229 ± 0.018
+- **rainfall** — 0.179 ± 0.011
+- **K** — 0.167 ± 0.013
+- **P** — 0.108 ± 0.015
+
+Full detail, including the per-class report and confusion matrix, is written
+to `backend/models/evaluation_report.json` on every training run.
+
+---
+
+## 📊 Exploratory analysis
+
+```bash
+python eda/run_eda.py
+```
+
+Regenerates every figure and rewrites [`eda/EDA_REPORT.md`](eda/EDA_REPORT.md).
+Nothing in that report is typed in by hand — every number is computed from the
+dataset at run time, so it cannot drift out of sync with the data.
+
+Headline findings:
+
+- **2,200 rows, 7 numeric features, 22 crops, exactly 100 samples each.** No
+  missing values, no duplicate rows. Perfect balance means plain accuracy is a
+  fair headline metric and resampling would be unjustified.
+- **No outlier removal is applied, deliberately.** K flags 9% of rows as
+  global IQR outliers and *zero* within their own crop. Those points are the
+  high-potassium crops sitting where agronomy says they should; a global
+  filter would delete the signal that separates the classes.
+- **P ↔ K correlate at +0.74** — agronomically real (compound fertiliser).
+  Every other pair sits below |0.3|, so there is nothing for PCA to gain.
+- **A depth-5 tree scores only 0.409, but LDA scores 0.967.** Separability
+  does not come from any single feature crossing a threshold — it comes from
+  the joint configuration of all seven.
 
 ---
 
@@ -357,7 +493,23 @@ Data Generation → DVC tracking → Model Training → MLflow logging
 SHAP uses Shapley values from game theory — mathematically guaranteed to be fair and consistent. TreeExplainer is also 1000× faster than model-agnostic SHAP for Random Forests.
 
 **Q: Why Random Forest as primary model?**
-RF achieves ~98% accuracy on this dataset, handles non-linear feature interactions, and works natively with SHAP's fast TreeExplainer.
+Not for accuracy — GaussianNB actually edged it in cross-validation
+(0.9949 vs 0.9938), and that gap is smaller than the fold standard deviation
+(0.0058), so the two are statistically indistinguishable here. RF is served
+because the product requires per-prediction SHAP values and `TreeExplainer`
+computes those exactly for a forest, where GaussianNB would need the
+approximate, far slower `KernelExplainer`. The rationale is recorded in
+`evaluation_report.json` under `model_selection`.
+
+**Q: Why `tree_path_dependent` rather than interventional SHAP?**
+The interventional estimator broke `/explain` on every request. SHAP checks
+additivity across all 22 classes at once, and summing float contributions
+over 200 trees of depth ~23 leaves ~1e-4 of residue on the near-zero-probability
+classes, which trips the check — even though the predicted class's own
+attributions were accurate to ~1e-9. `tree_path_dependent` satisfies
+additivity to ~1e-16, needs no background set, and is faster. The trade-off
+is that it conditions on tree structure, so credit can be shared between
+correlated features — which here means only P and K (r = 0.74).
 
 **Q: What is the MLflow experiment tracking?**
 Every training run logs hyperparameters + metrics + model artifact to a local SQLite database viewable in the MLflow UI. Enables reproducibility and model versioning.
@@ -373,11 +525,11 @@ Tracked, not hidden. These are real and currently unfixed:
 
 | Area | Limitation |
 |------|------------|
-| **Data** | Training data is synthetic (see the disclaimer at the top). No validation against field observations has been done. |
-| **Evaluation** | Single train/test split. No cross-validation, hyperparameter search, confusion matrix, ROC-AUC or calibration check. |
+| **Data** | The dataset is a public benchmark with no tails in any per-class distribution (zero within-class IQR outliers), which indicates it was at least partly generated. No validation against field observations has been done. |
+| **Evaluation** | 5-fold CV, grid search and a single held-out test evaluation are in place, with confusion matrix and per-class report in `evaluation_report.json`. Still missing: ROC-AUC and a calibration check. A random split also cannot measure generalisation to a *new region*, which is the deployment question that would actually matter. |
 | **Confidence** | `predict_proba` is uncalibrated (measured ECE ≈ 0.05) and systematically under-confident. The UI's High/Medium/Low bands are not derived from measured reliability. |
 | **Out-of-distribution input** | Physically absurd inputs (pH 0, all-zero soil) still return a confident crop. There is no novelty detection or abstain path. |
-| **Feature importance** | `/feature-importance` serves impurity-based importance, which is biased. Permutation importance ranks the features differently. |
+| **Feature importance** | `/feature-importance` still serves the forest's impurity-based importance, which is biased toward high-cardinality continuous features. The training pipeline now computes permutation importance (in `evaluation_report.json`) and it ranks the features differently; the endpoint has not been switched over. |
 | **DVC** | `mlops/dvc.yaml` is not runnable as written — its paths are root-relative but the file lives in `mlops/`, and the repo has no initialised `.dvc/`. |
 | **Scale** | Prediction logs are a local JSONL file with no rotation, so the service is not yet safe to run as multiple replicas. |
 | **Security** | No authentication, no rate limiting, and no security headers. `/monitoring` is publicly readable. |

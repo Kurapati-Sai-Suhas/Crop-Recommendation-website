@@ -6,7 +6,7 @@ train_pipeline.py  (Project Root)
 Master training pipeline script.
 
 Run this ONCE to:
-  1. Generate the crop dataset (if not already present)
+  1. Download the crop dataset (if not already present)
   2. Train all 3 models (RF, LR, NB)
   3. Save models to backend/models/
   4. Log everything to MLflow
@@ -26,16 +26,19 @@ sys.path.insert(0, ROOT)
 
 
 def ensure_dataset():
-    """Generate dataset CSV if it doesn't already exist."""
+    """Download and verify the dataset if it is not already present."""
     data_path = os.path.join(ROOT, "data", "crop_data.csv")
-    if not os.path.exists(data_path):
-        print("[DATA] Dataset not found. Generating...")
-        from data.generate_data import generate_crop_data
-        df = generate_crop_data()
-        df.to_csv(data_path, index=False)
-        print(f"   [OK] Dataset created: {len(df)} rows")
-    else:
+    if os.path.exists(data_path):
         print(f"[DATA] Dataset found: {data_path}")
+        return
+
+    print("[DATA] Dataset not found. Downloading...")
+    from data.download_data import fetch, verify, SOURCE_URL
+    payload = fetch(SOURCE_URL)
+    verify(payload)                      # checksum + structure, before writing
+    with open(data_path, "wb") as handle:
+        handle.write(payload)
+    print(f"   [OK] Dataset written: {data_path}")
 
 
 def run_training():
