@@ -474,16 +474,59 @@ Headline findings:
 
 ## 🚢 Deployment
 
-### Backend → Render / Railway
-1. Push to GitHub
-2. Connect Render to your repo
-3. Set build command: `pip install -r requirements.txt && python train_pipeline.py`
-4. Set start command: `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`
+One container serves the React UI and the FastAPI API on a single port.
+Full instructions, the cloud-platform comparison, and the SageMaker / Vertex AI
+mapping are in [`deploy/DEPLOY.md`](deploy/DEPLOY.md).
 
-### Frontend → Vercel / Netlify
-1. Set `VITE_API_URL=https://your-backend.onrender.com`
-2. Build command: `npm run build`
-3. Publish directory: `dist`
+```
+Browser → Container ─┬─ /          React bundle
+                     ├─ /docs      OpenAPI UI
+                     └─ /api/v1/*  validate → scale → predict → SHAP → log
+```
+
+The image bakes in the trained artifacts. It **never trains at build time**
+and **never reads the dataset** — a deploy ships a model that was reviewed,
+not one produced silently during a build.
+
+```bash
+python deploy/build_space.py --check   # verify artifacts exist
+python deploy/build_space.py           # stage .space-build/
+```
+
+Recommended target is **Hugging Face Spaces** (free, no card, public HTTPS).
+Google Cloud Run is a good alternative if you already have GCP billing.
+SageMaker and Vertex endpoints bill hourly for an idle node and are not
+worth it for a portfolio project — `deploy/DEPLOY.md` explains how this
+architecture maps onto them regardless.
+
+---
+
+## 🔁 Retraining
+
+```bash
+python retrain.py --dry-run              # validate new data, change nothing
+python retrain.py --data path/to/new.csv # retrain
+python retrain.py --rollback             # restore the previous model set
+```
+
+Nothing schedules this. It runs when something actually changed — the drift
+report shows a sustained shift, or new labelled data arrives. Retraining on a
+timetable against unchanged data burns compute and adds risk for no gain.
+
+The gate reuses the rule the training pipeline applies to model selection: a
+difference smaller than the CV fold standard deviation is noise, and noise is
+not a reason to ship. Three outcomes:
+
+| Candidate vs incumbent | Action |
+|---|---|
+| better by more than fold noise | promote |
+| inside fold noise | **keep the incumbent** — a coin flip is not an upgrade |
+| worse by more than fold noise | roll back |
+
+Every run appends to `backend/models/retrain_history.json`. Data is validated
+before any compute is spent: missing columns, non-numeric features, too few
+samples per class for a stratified 5-fold split, and values far outside the
+previous training range are all reported, and the fatal ones abort the run.
 
 ---
 

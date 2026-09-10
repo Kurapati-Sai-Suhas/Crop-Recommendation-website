@@ -26,6 +26,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -109,9 +110,10 @@ app = FastAPI(
     description="""
 An **Explainable AI** system for crop recommendation.
 
-> **Status: academic prototype.** Models are trained on *synthetic* data.
-> Reported accuracy measures how well each model recovers that generator,
-> not agronomic accuracy. Not for real planting decisions.
+> **Status: portfolio project.** Trained on a public benchmark dataset on
+> which an untuned linear discriminant already scores 0.967, so the reported
+> ~0.99 accuracy reflects the dataset more than the model. The agronomy is
+> not validated — not for real planting decisions.
 
 ## Features
 - **Predict** the best crop based on soil and environmental data
@@ -205,15 +207,68 @@ app.include_router(router, prefix="/api/v1")
 
 
 # ─── Root ────────────────────────────────────────────────────────────────────
-@app.get("/", tags=["System"])
-async def root():
+@app.get("/api", tags=["System"])
+async def api_root():
     return {
-        "message": "🌾 Crop Recommendation API is running!",
+        "message": "Crop Recommendation API is running",
         "docs":    "/docs",
         "health":  "/api/v1/health",
-        "notice":  "Academic prototype — trained on synthetic data. "
+        "notice":  "Portfolio project on a public benchmark dataset. "
                    "Not for real planting decisions.",
     }
+
+
+# ─── Static frontend (single-container deployment) ───────────────────────────
+# When the React bundle has been built into frontend/dist, serve it from this
+# same process so one container exposes both the UI and the API on one URL.
+# Local development is unaffected: without a build, this block is skipped and
+# Vite keeps serving the frontend on :5173 against this API on :8000.
+#
+# Mounted last, after every /api route is registered, because the catch-all
+# at "/" would otherwise shadow them.
+_FRONTEND_DIST = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "frontend", "dist",
+)
+
+if os.path.isdir(_FRONTEND_DIST):
+    from fastapi.staticfiles import StaticFiles
+
+    class SPAStaticFiles(StaticFiles):
+        """
+        Serve index.html for unknown paths so client-side routes work.
+
+        StaticFiles *raises* HTTPException(404) for a missing file rather
+        than returning a 404 response, so catching the exception is the
+        only thing that works here -- inspecting a returned status code
+        never fires, and /dashboard falls through to FastAPI's JSON 404.
+        """
+
+        async def get_response(self, path: str, scope):
+            try:
+                return await super().get_response(path, scope)
+            except StarletteHTTPException as exc:
+                if exc.status_code != 404:
+                    raise
+                # A missing asset should 404 honestly; only extensionless
+                # paths are plausible React Router routes.
+                if "." in path.rsplit("/", 1)[-1]:
+                    raise
+                return await super().get_response("index.html", scope)
+
+    app.mount("/", SPAStaticFiles(directory=_FRONTEND_DIST, html=True),
+              name="frontend")
+    logger.info("Serving built frontend from %s", _FRONTEND_DIST)
+else:
+    @app.get("/", tags=["System"])
+    async def root():
+        return {
+            "message": "Crop Recommendation API is running",
+            "docs":    "/docs",
+            "health":  "/api/v1/health",
+            "notice":  "No frontend build found; API only. "
+                       "Run `npm run build` in frontend/ to serve the UI here.",
+        }
 
 
 # ─── Run directly ─────────────────────────────────────────────────────────────

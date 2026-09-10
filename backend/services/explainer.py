@@ -56,7 +56,9 @@ UNITS = {
 }
 
 BASE_DIR  = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DATA_PATH = os.path.join(BASE_DIR, "data", "crop_data.csv")
+# No dataset path here by design: since the explainer moved to
+# tree_path_dependent it needs no background sample, so the serving image
+# ships models only and never carries the training data.
 BASELINE_PATH = os.path.join(BASE_DIR, "backend", "models",
                              "monitoring_baseline.json")
 

@@ -37,3 +37,5 @@ logs/
 .idea/
 .DS_Store
 Thumbs.db
+.space-build/
+backend/models_previous/

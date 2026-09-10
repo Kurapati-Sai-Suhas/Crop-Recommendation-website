@@ -8,8 +8,15 @@
 
 import axios from 'axios';
 
-// Base URL: use env variable or fall back to localhost
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Base URL resolution, in priority order:
+//   1. VITE_API_URL, when the API lives on a different host (split deploy).
+//   2. Same-origin, in a production build. The deployed container serves this
+//      bundle and the API from one process, so a relative path is correct and
+//      avoids hardcoding a hostname into the build.
+//   3. localhost:8000 in dev, where Vite serves the UI on :5173 separately.
+const BASE_URL =
+  import.meta.env.VITE_API_URL ??
+  (import.meta.env.PROD ? '' : 'http://localhost:8000');
 
 const apiClient = axios.create({
   baseURL: `${BASE_URL}/api/v1`,
