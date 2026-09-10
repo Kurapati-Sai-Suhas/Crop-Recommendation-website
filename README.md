@@ -464,6 +464,43 @@ to `backend/models/evaluation_report.json` on every training run.
 
 ---
 
+## 🔍 Is it overfitting?
+
+```bash
+python eda/overfitting_check.py
+```
+
+Training accuracy is **1.0000**, which looks alarming and is the expected
+behaviour of a forest grown with `min_samples_leaf=1` — every tree is grown to
+purity on its bootstrap sample. What matters is the gap and whether
+constraining capacity would help. Six checks say no:
+
+| Check | Result |
+|---|---|
+| Train vs test | 1.0000 vs 0.9955 — **gap +0.0045** |
+| Out-of-bag score | **0.9949**, within 0.0006 of test |
+| `max_depth` 15 / 20 / None | all CV 0.9938 — constraining does not help |
+| Learning-curve gap | 0.0415 → 0.0062 as training data grows |
+| Shuffled labels | train 1.0000, CV **0.0381** (chance 0.0455) |
+| Tree size | ~75 leaves for 22 classes, 23 rows per leaf |
+
+The out-of-bag score is the most convincing single number: it is computed
+during fitting from the ~37% of rows each tree never saw, and it lands within
+0.0006 of the held-out test score. A memorising forest would show training
+accuracy at 1.0 with OOB collapsing.
+
+The shuffled-label control is the one that settles it. Given permuted labels
+the same model still reaches 1.0000 on training data but scores at chance on
+CV — so it *can* memorise noise, and demonstrably is not doing so on the real
+labels.
+
+**A separate concern, often confused with this one:** if 0.9955 seems too good,
+the cause is not the model — an untuned linear discriminant reaches 0.967 on
+this data. That is a property of the dataset, not overfitting, and it is
+covered under *Exploratory analysis* below.
+
+---
+
 ## 📊 Exploratory analysis
 
 ```bash
