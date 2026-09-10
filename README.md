@@ -357,11 +357,30 @@ Download + verify → DVC tracking → CV + tuning → Test eval → MLflow
                    SHAP Explanation → Monitoring Logs
 ```
 
-### MLflow Tracks:
-- Hyperparameters per model
-- Accuracy, Precision, Recall, F1 per run
-- Model artifacts (saved to Registry)
-- Run history (compare all experiments)
+### MLflow tracks
+
+Each training run logs one MLflow run per model to `mlops/mlruns/`:
+
+| Logged | Why it is there |
+|---|---|
+| `cv_accuracy_untuned` | the baseline before any tuning |
+| `cv_accuracy_tuned` | what the grid search actually bought |
+| `test_accuracy` / `precision` / `recall` / `f1` | the single held-out evaluation |
+| best hyperparameters | the configuration that produced those numbers |
+
+Logging **both** the untuned and tuned CV scores is the point. A run that
+records only the final number cannot answer "was the tuning worth it?" — here
+it shows that grid search moved Logistic Regression 0.9682 → 0.9778 and the
+Random Forest only 0.9926 → 0.9938.
+
+```bash
+mlflow ui --backend-store-uri ./mlops/mlruns --port 5000
+```
+
+Verified: 3 runs logged and rendering in the UI. Note that `mlflow==2.12.2`
+imports `pkg_resources`, removed in setuptools 81+, so `setuptools<81` is
+pinned in `requirements.txt`. Without that pin `import mlflow` fails outright
+with `ModuleNotFoundError: No module named 'pkg_resources'`.
 
 ### DVC Manages:
 - `data/crop_data.csv` versioning
@@ -555,7 +574,12 @@ is that it conditions on tree structure, so credit can be shared between
 correlated features — which here means only P and K (r = 0.74).
 
 **Q: What is the MLflow experiment tracking?**
-Every training run logs hyperparameters + metrics + model artifact to a local SQLite database viewable in the MLflow UI. Enables reproducibility and model versioning.
+Each training run logs one run per model to a local file store, with the best
+hyperparameters and both the untuned and tuned cross-validation scores
+alongside the held-out test metrics. Logging both CV numbers is deliberate: it
+makes "was the tuning worth it?" answerable from the tracking UI instead of
+requiring a rerun. It also means the claim in this README can be checked
+against the recorded runs rather than taken on trust.
 
 **Q: How does monitoring work?**
 Every prediction is appended to `logs/predictions.jsonl`. The `/monitoring` endpoint computes z-score drift by comparing recent prediction input distributions against training data statistics.
@@ -576,7 +600,7 @@ Tracked, not hidden. These are real and currently unfixed:
 | **DVC** | `mlops/dvc.yaml` is not runnable as written — its paths are root-relative but the file lives in `mlops/`, and the repo has no initialised `.dvc/`. |
 | **Scale** | Prediction logs are a local JSONL file with no rotation, so the service is not yet safe to run as multiple replicas. |
 | **Security** | No authentication, no rate limiting, and no security headers. `/monitoring` is publicly readable. |
-| **Dependencies** | `mlflow==2.12.2` imports the removed `pkg_resources`, so `setuptools<81` is pinned as a workaround. Upgrading mlflow to ≥3.11.1 removes both the pin and 43 known advisories. |
+| **Dependencies** | `mlflow==2.12.2` imports `pkg_resources`, removed in setuptools 81+, so `setuptools<81` is pinned. Confirmed by reproducing the failure: with setuptools 84, `import mlflow` raises `ModuleNotFoundError`. Upgrading mlflow to ≥3.11.1 removes both the pin and 43 known advisories. |
 
 ---
 
