@@ -25,11 +25,14 @@
 > a question this dataset can answer. A ~99% headline here is a property of
 > the data, not evidence of modelling skill.
 >
-> **2. The dataset is a benchmark, not field measurements.** Each crop's
-> feature values are tightly bounded with no tails — zero within-class IQR
-> outliers across all seven features, where ~15 would be expected from
-> measured data — which indicates it was at least partly generated. See
-> [`eda/EDA_REPORT.md`](eda/EDA_REPORT.md).
+> **2. The dataset is synthetic, and demonstrably so.** Every crop's
+> nitrogen range spans exactly 40, phosphorus exactly 25, potassium exactly
+> 10; 97.7% of class bounds are exact multiples of 5. Within those ranges the
+> values are uniform, not normal — 141 of 154 (class, feature) pairs are
+> consistent with a uniform distribution and **none** with a normal one. The
+> crops therefore sit in near-disjoint axis-aligned boxes, which is why any
+> competent classifier reaches ~99%. Reproduce with
+> [`eda/dataset_provenance.py`](eda/dataset_provenance.py).
 >
 > The engineering is real and works: leakage-safe pipelines, cross-validated
 > selection, SHAP attribution, model serving, drift monitoring. The agronomy
@@ -461,6 +464,55 @@ high-cardinality continuous features:
 
 Full detail, including the per-class report and confusion matrix, is written
 to `backend/models/evaluation_report.json` on every training run.
+
+---
+
+## 🔬 Why is accuracy 99.5%?
+
+```bash
+python eda/dataset_provenance.py
+```
+
+Three candidate explanations, tested in order.
+
+**Overfitting?** No — see the section below. Train/test gap 0.0045, OOB 0.9949,
+and the model scores at chance on shuffled labels.
+
+**Leakage from near-duplicate rows spanning the split?** No. Exact-duplicate
+checks can miss near-copies, so this measures distances directly:
+
+| Check | Result |
+|---|---|
+| test→train nearest-neighbour distance | median 0.3971 |
+| train→train nearest-neighbour distance | median 0.3911 (**ratio 1.015**) |
+| test rows with a train neighbour closer than 0.10 | **0** |
+| duplicates rounded to integers | **0** |
+| GroupKFold over 150 clusters | **0.9941** vs 0.9955 ordinary |
+
+Holding out whole clusters, so near-copies cannot straddle the split, moves
+the score by 0.0014. There is nothing to leak.
+
+**The dataset is synthetic.** This is the actual answer:
+
+| Feature | Per-class span |
+|---|---|
+| N | exactly **40** for 20 of 22 crops |
+| P | exactly **25** for 21 of 22 crops |
+| K | exactly **10** for all 22 crops |
+
+97.7% of class bounds are exact multiples of 5 (`apple 0–40`, `banana 80–120`,
+`blackgram 20–60`…). Inside those ranges the values are **uniform**: 141 of 154
+(class, feature) pairs are consistent with a uniform distribution, **none**
+with a normal one; mean excess kurtosis −1.168 against uniform's −1.2, and
+20.9% of mass in the outer 10% of each range where a normal would put ~3%.
+
+Each crop occupies a near-disjoint axis-aligned box. Drawn with
+`uniform(low, high)` over hand-typed bounds. **~99% is what this dataset hands
+to any classifier** — it is a property of the data, not evidence of modelling.
+
+Robustness degrades gracefully under noise (0.9955 → 0.9500 at half a
+within-class standard deviation, → 0.6750 at two), which is what a model using
+real structure looks like rather than one memorising points.
 
 ---
 

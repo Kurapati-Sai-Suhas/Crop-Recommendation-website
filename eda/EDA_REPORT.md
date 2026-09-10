@@ -41,7 +41,9 @@ Counted two ways, because the difference is the whole point:
 | ph          |                57 |         2.59 |                       0 |                  0 |
 | rainfall    |               100 |         4.55 |                       0 |                  0 |
 
-Several features carry a visible number of *global* outliers but far fewer *within-class* ones. Those points are not errors — they are the high-rainfall and high-potassium crops sitting where they should. Trimming on a global IQR rule would erase the signal that separates them, so **no outlier removal is applied.**
+Every feature shows global outliers — K flags 9% of rows — and **not one of them is an outlier within its own crop.** Those points are not errors. They are the high-potassium crops (grapes, apple) and the high-rainfall crops (rice, coconut) sitting exactly where agronomy says they should. A global IQR filter would delete the signal that separates the classes, so **no outlier removal is applied** — the correct treatment here is none.
+
+Worth noting for what it says about the data: a within-class count of exactly zero across all seven features is not what measured field data looks like. Roughly 0.7% of samples drawn from a normal distribution fall outside the 1.5×IQR fence, so ~15 would be expected here. Getting none means each crop's values are cleanly bounded with no tails — consistent with this benchmark having been at least partly generated rather than observed. See *Limitations*.
 
 ## 4. Correlation
 
@@ -110,6 +112,6 @@ The questions the headline hides are the ones worth answering:
 
 ## 6. Limitations
 
-- The dataset is a well-known teaching benchmark. Its per-class feature distributions are close to independent Gaussians, which suggests it was at least partly synthesised rather than measured in the field. It is fine for demonstrating a modelling workflow and unfit for agronomic advice.
+- **The dataset is synthetic.** Every crop's nitrogen range spans exactly 40, phosphorus exactly 25 and potassium exactly 10, and 97.7% of class bounds are exact multiples of 5. Within those ranges the values are uniform, not normal: 141 of 154 (class, feature) pairs are consistent with a uniform distribution and none with a normal one. Each crop occupies a near-disjoint axis-aligned box, which is why any classifier reaches ~99%. See `dataset_provenance.py`. Fine for demonstrating a workflow; unfit for agronomic advice.
 - Seven features describe a field with no soil type, no season, no geography and no cultivar. Real recommendation needs all of those.
 - Every row is one field-season with no temporal or spatial grouping, so a random split cannot leak across correlated units — but it also cannot measure generalisation to a *new region*, which is the deployment question that would actually matter.

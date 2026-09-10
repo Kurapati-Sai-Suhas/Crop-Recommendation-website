@@ -476,11 +476,15 @@ def write_report(df, prof, stats, out, probe_scores, difficulty, figures):
         "",
         "## 6. Limitations",
         "",
-        "- The dataset is a well-known teaching benchmark. Its per-class "
-        "feature distributions are close to independent Gaussians, which "
-        "suggests it was at least partly synthesised rather than measured in "
-        "the field. It is fine for demonstrating a modelling workflow and "
-        "unfit for agronomic advice.",
+        "- **The dataset is synthetic.** Every crop's nitrogen range spans "
+        "exactly 40, phosphorus exactly 25 and potassium exactly 10, and "
+        "97.7% of class bounds are exact multiples of 5. Within those ranges "
+        "the values are uniform, not normal: 141 of 154 (class, feature) "
+        "pairs are consistent with a uniform distribution and none with a "
+        "normal one. Each crop occupies a near-disjoint axis-aligned box, "
+        "which is why any classifier reaches ~99%. See "
+        "`dataset_provenance.py`. Fine for demonstrating a workflow; unfit "
+        "for agronomic advice.",
         "- Seven features describe a field with no soil type, no season, no "
         "geography and no cultivar. Real recommendation needs all of those.",
         "- Every row is one field-season with no temporal or spatial "

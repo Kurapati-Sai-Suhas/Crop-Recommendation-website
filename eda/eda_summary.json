@@ -17,7 +17,7 @@
       "humidity": "float64",
       "ph": "float64",
       "rainfall": "float64",
-      "label": "object"
+      "label": "str"
     }
   },
   "separability_probes": {
