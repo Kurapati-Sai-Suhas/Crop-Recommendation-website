@@ -36,7 +36,10 @@ import tempfile
 
 HERE      = os.path.dirname(os.path.abspath(__file__))
 ROOT      = os.path.dirname(os.path.dirname(HERE))
-MODEL_DIR = os.path.join(ROOT, "backend", "models")
+# Container-native artifacts, built by build_container_native_model.py under
+# scikit-learn 1.2.1 to match the SKLearn 1.2-1 image. NOT backend/models/,
+# which is built with 1.4.2 for the web service.
+MODEL_DIR = os.path.join(HERE, "artifacts")
 CODE_DIR  = os.path.join(HERE, "code")
 
 ENDPOINT_NAME = "crop-recommendation"
@@ -45,15 +48,14 @@ ENDPOINT_NAME = "crop-recommendation"
 # comparison panel in the web UI and have no business in an endpoint.
 ARTIFACTS = ["RandomForest.joblib", "scaler.joblib", "label_encoder.joblib"]
 
-# SageMaker's managed SKLearn container maxes out at 1.2-1, but these models
-# were pickled with scikit-learn 1.4.2. Loading them under 1.2 raises
-# InconsistentVersionWarning and can fail outright.
+# The managed SKLearn container maxes out at 1.2-1 (Python 3.9, scikit-learn
+# 1.2.1) while the project trains on 1.4.2. Rather than pip-installing 1.4.2
+# into the container at startup -- which broke twice, first by shattering the
+# pre-compiled scipy's numpy ABI and then by leaving two numpy builds in one
+# process -- the model is rebuilt under 1.2.1 and shipped as-is.
 #
-# The fix is code/requirements.txt, which pins scikit-learn==1.4.2. SageMaker
-# installs it into the container at startup, so the serving version matches
-# the training version exactly. Without that file this endpoint would either
-# refuse to load or -- worse -- load and score differently from the training
-# run, with no error.
+# Nothing is installed at runtime. That removes the whole class of ABI
+# problems and keeps the cold start well inside the 180-second budget.
 FRAMEWORK_VERSION = "1.2-1"
 PYTHON_VERSION    = "py3"
 
@@ -68,7 +70,10 @@ def build_tarball(destination):
     missing = [a for a in ARTIFACTS if not os.path.exists(os.path.join(MODEL_DIR, a))]
     if missing:
         raise FileNotFoundError(
-            f"Missing artifacts: {missing}. Run `python train_pipeline.py` first."
+            f"Missing container-native artifacts: {missing}. "
+            f"Build them with the 3.9 environment: "
+            f".venv-sm/Scripts/python "
+            f"deploy/sagemaker/build_container_native_model.py"
         )
 
     with tarfile.open(destination, "w:gz") as tar:
@@ -200,8 +205,13 @@ def main():
                         help="Provision an instance instead of serverless "
                              "(bills hourly while it exists)")
     parser.add_argument("--instance-type", default="ml.m5.large")
-    parser.add_argument("--memory-mb", type=int, default=2048,
-                        help="Serverless memory; needs >=2048 for sklearn+numpy")
+    parser.add_argument("--memory-mb", type=int, default=3072,
+                        help="Serverless memory. Needs >=2048 for sklearn+numpy; "
+                             "more memory also means more CPU, which matters "
+                             "because the container has 180s to install "
+                             "dependencies and load the model. New accounts cap "
+                             "at 3072 MB ('Memory size in MB per serverless "
+                             "endpoint' in Service Quotas).")
     parser.add_argument("--package-only", action="store_true",
                         help="Build model.tar.gz locally and stop. No AWS needed.")
     parser.add_argument("--teardown", action="store_true",

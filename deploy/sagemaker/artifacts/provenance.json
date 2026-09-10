@@ -1,0 +1,18 @@
+{
+  "built_with": {
+    "python": "3.9.25",
+    "scikit-learn": "1.2.1",
+    "numpy": "1.23.5",
+    "joblib": "1.2.0"
+  },
+  "target_container": "SageMaker SKLearn 1.2-1 (py3)",
+  "hyperparameters": {
+    "n_estimators": 200,
+    "max_depth": null,
+    "min_samples_leaf": 1
+  },
+  "random_state": 42,
+  "test_accuracy": 0.9955,
+  "test_f1": 0.9955,
+  "note": "Built to match the container's library versions so nothing is pip-installed at startup. The project's own service uses backend/models/, built with scikit-learn 1.4.2."
+}
