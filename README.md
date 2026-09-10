@@ -467,6 +467,51 @@ to `backend/models/evaluation_report.json` on every training run.
 
 ---
 
+## 📐 Full evaluation
+
+```bash
+python eda/full_evaluation.py     # writes backend/models/full_evaluation.json
+```
+
+| Model | Train | CV mean ± sd | Test | 95% CI on test |
+|---|---|---|---|---|
+| RandomForest | 1.0000 | 0.9938 ± 0.0045 | **0.9955** | [0.9836, 0.9988] |
+| NaiveBayes | 0.9949 | 0.9949 ± 0.0042 | 0.9955 | [0.9836, 0.9988] |
+| LogisticRegression | 0.9903 | 0.9778 ± 0.0058 | 0.9841 | [0.9675, 0.9923] |
+
+RandomForest out-of-bag: **0.9949**.
+
+**The confidence intervals are the honest headline.** With 440 test rows and 2
+errors, "0.9955" implies four-digit precision the sample cannot support — it
+means *somewhere around 98.4–99.9%*. RandomForest and NaiveBayes have
+identical intervals, so they are not distinguishable on the test set either,
+which is the same conclusion cross-validation reached.
+
+| Model | Bal. acc | F1 macro | κ | MCC | ROC-AUC | Log loss | Brier | ECE |
+|---|---|---|---|---|---|---|---|---|
+| RandomForest | 0.9955 | 0.9955 | 0.9952 | 0.9952 | 1.0000 | 0.0516 | 0.0150 | 0.0390 |
+| NaiveBayes | 0.9955 | 0.9954 | 0.9952 | 0.9953 | 1.0000 | **0.0156** | 0.0096 | 0.0064 |
+| LogisticRegression | 0.9841 | 0.9840 | 0.9833 | 0.9834 | 0.9999 | 0.0372 | 0.0189 | 0.0219 |
+
+Two things worth reading off that table:
+
+**ROC-AUC is useless here** — 1.0000 for two models, 0.9999 for the third. It
+cannot separate models that all rank correctly, which is why accuracy remains
+the headline despite being the cruder metric.
+
+**Log loss ranks the models differently from accuracy.** RandomForest ties
+NaiveBayes on accuracy but has the *worst* log loss, 0.0516 against 0.0156,
+because a forest's vote fraction is under-confident and log loss penalises
+that. If the product needed trustworthy probabilities rather than a top-1
+label, NaiveBayes would be the better choice — an argument the accuracy
+column cannot make.
+
+Per-class, 19 of 22 crops are perfect. Only `blackgram` and `rice` fall to
+0.950 recall, and `jute` and `maize` to 0.952 precision: the same two errors
+seen from both directions.
+
+---
+
 ## 🔬 Why is accuracy 99.5%?
 
 ```bash
@@ -682,8 +727,8 @@ Tracked, not hidden. These are real and currently unfixed:
 | Area | Limitation |
 |------|------------|
 | **Data** | The dataset is a public benchmark with no tails in any per-class distribution (zero within-class IQR outliers), which indicates it was at least partly generated. No validation against field observations has been done. |
-| **Evaluation** | 5-fold CV, grid search and a single held-out test evaluation are in place, with confusion matrix and per-class report in `evaluation_report.json`. Still missing: ROC-AUC and a calibration check. A random split also cannot measure generalisation to a *new region*, which is the deployment question that would actually matter. |
-| **Confidence** | `predict_proba` is uncalibrated (measured ECE ≈ 0.05) and systematically under-confident. The UI's High/Medium/Low bands are not derived from measured reliability. |
+| **Evaluation** | 5-fold CV, grid search and a single held-out test evaluation are in place, with confusion matrix and per-class report in `evaluation_report.json`. ROC-AUC, log loss, Brier, Cohen's κ, MCC, calibration and Wilson intervals are computed by `eda/full_evaluation.py`. A random split still cannot measure generalisation to a *new region*, which is the deployment question that would actually matter. |
+| **Confidence** | `predict_proba` is uncalibrated and systematically under-confident — measured ECE **0.0390**, with every reliability bin showing accuracy above stated confidence (a 0.66 mean-confidence bin is 88% accurate). NaiveBayes is far better calibrated at 0.0064. The UI's High/Medium/Low bands are not derived from measured reliability. Fix: Platt scaling or isotonic regression. |
 | **Out-of-distribution input** | Physically absurd inputs (pH 0, all-zero soil) still return a confident crop. There is no novelty detection or abstain path. |
 | **Feature importance** | `/feature-importance` still serves the forest's impurity-based importance, which is biased toward high-cardinality continuous features. The training pipeline now computes permutation importance (in `evaluation_report.json`) and it ranks the features differently; the endpoint has not been switched over. |
 | **DVC** | `mlops/dvc.yaml` is not runnable as written — its paths are root-relative but the file lives in `mlops/`, and the repo has no initialised `.dvc/`. |
